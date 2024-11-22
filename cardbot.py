@@ -4,6 +4,8 @@ import requests
 import os
 from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
+from PIL import Image
+from io import BytesIO
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -26,52 +28,83 @@ async def create_card_embed(card_data, ctx):
         timestamp=datetime.now(timezone.utc)
     )
 
-    card_layout = card_data.get('layout')
-    
-    # Handle double-faced cards
-    if card_layout in ['transform', 'modal_dfc', 'double_faced_token']:
-        card_faces = card_data.get('card_faces', [])
-        if len(card_faces) >= 2:
-            # Front face
-            front_face = card_faces[0]
-            embed.add_field(
-                name=f"Front Face - {front_face.get('name')}",
-                value=f"**Mana Cost:** {front_face.get('mana_cost', 'N/A')}\n"
-                      f"**Type:** {front_face.get('type_line', 'N/A')}\n"
-                      f"**Oracle Text:** {front_face.get('oracle_text', 'N/A')}",
-                inline=False
-            )
-            embed.set_thumbnail(url=front_face.get('image_uris', {}).get('normal'))
-
-            # Back face
-            back_face = card_faces[1]
-            embed.add_field(
-                name=f"Back Face - {back_face.get('name')}",
-                value=f"**Type:** {back_face.get('type_line', 'N/A')}\n"
-                      f"**Oracle Text:** {back_face.get('oracle_text', 'N/A')}",
-                inline=False
-            )
-            embed.set_image(url=back_face.get('image_uris', {}).get('normal'))
-    else:
-        # Regular single-faced card
-        embed.add_field(
-            name="Card Details",
-            value=f"**Mana Cost:** {card_data.get('mana_cost', 'N/A')}\n"
-                  f"**Type:** {card_data.get('type_line', 'N/A')}\n"
-                  f"**Oracle Text:** {card_data.get('oracle_text', 'N/A')}",
-            inline=False
-        )
-        embed.set_image(url=card_data.get('image_uris', {}).get('normal'))
-
-    # Add price information
+    # Format prices
     prices = card_data.get('prices', {})
-    if prices:
-        price_text = f"USD: ${prices.get('usd', 'N/A')}\n"
-        price_text += f"USD Foil: ${prices.get('usd_foil', 'N/A')}"
+    price_text = ""
+    if prices.get('usd'):
+        price_text += f"USD: ${prices['usd']}\n"
+    if prices.get('usd_foil'):
+        price_text += f"USD Foil: ${prices['usd_foil']}"
+
+    # Handle double-sided cards
+    if 'card_faces' in card_data and len(card_data['card_faces']) > 1:
+        face1_url = card_data['card_faces'][0].get('image_uris', {}).get('normal')
+        face2_url = card_data['card_faces'][1].get('image_uris', {}).get('normal')
+        
+        if face1_url and face2_url:
+            # Create combined image
+            face1_response = requests.get(face1_url)
+            face2_response = requests.get(face2_url)
+            
+            img1 = Image.open(BytesIO(face1_response.content))
+            img2 = Image.open(BytesIO(face2_response.content))
+            
+            total_width = img1.width + img2.width
+            max_height = max(img1.height, img2.height)
+            combined_img = Image.new('RGB', (total_width, max_height))
+            
+            combined_img.paste(img1, (0, 0))
+            combined_img.paste(img2, (img1.width, 0))
+            
+            combined_bytes = BytesIO()
+            combined_img.save(combined_bytes, format='PNG')
+            combined_bytes.seek(0)
+            
+            file = discord.File(combined_bytes, filename="card.png")
+            embed.set_image(url="attachment://card.png")
+
+            # Front face information
+            face1 = card_data['card_faces'][0]
+            front_text = f"**Front Face - {face1.get('name')}**\n"
+            if 'mana_cost' in face1:
+                front_text += f"Mana Cost: {face1['mana_cost']}\n"
+            if 'type_line' in face1:
+                front_text += f"Type: {face1['type_line']}\n"
+            if 'oracle_text' in face1:
+                front_text += f"Oracle Text: {face1['oracle_text']}\n"
+            
+            embed.add_field(name="Front Side", value=front_text, inline=False)
+
+            # Back face information
+            face2 = card_data['card_faces'][1]
+            back_text = f"**Back Face - {face2.get('name')}**\n"
+            if 'type_line' in face2:
+                back_text += f"Type: {face2['type_line']}\n"
+            if 'oracle_text' in face2:
+                back_text += f"Oracle Text: {face2['oracle_text']}\n"
+            
+            embed.add_field(name="Back Side", value=back_text, inline=False)
+
+    else:
+        # Single-sided card
+        if 'image_uris' in card_data:
+            embed.set_image(url=card_data['image_uris'].get('normal'))
+        
+        card_text = ""
+        if 'mana_cost' in card_data:
+            card_text += f"Mana Cost: {card_data['mana_cost']}\n"
+        if 'type_line' in card_data:
+            card_text += f"Type: {card_data['type_line']}\n"
+        if 'oracle_text' in card_data:
+            card_text += f"Oracle Text: {card_data['oracle_text']}\n"
+        
+        embed.add_field(name="Card Information", value=card_text, inline=False)
+
+    # Add prices
+    if price_text:
         embed.add_field(name="Prices", value=price_text, inline=False)
 
-    embed.set_footer(text=f"Requested by {ctx.author.name}")
-    return embed
+    return embed, None if 'image_uris' in card_data else file
 
 @bot.command(name='card', help='Looks up a Magic: The Gathering card by name.')
 @commands.cooldown(1, 3, commands.BucketType.user)
@@ -95,7 +128,7 @@ async def card_lookup(ctx, *, card_name: str):
         card_data = response.json()
         from discord.errors import NotFound
 
-        embed = await create_card_embed(card_data, ctx)
+        embed, file = await create_card_embed(card_data, ctx)
         
         try:
             await loading_message.delete()
@@ -103,7 +136,10 @@ async def card_lookup(ctx, *, card_name: str):
             # Ignore if loading message was already deleted
             pass
         
-        await ctx.send(embed=embed)
+        if file:
+            await ctx.send(embed=embed, file=file)
+        else:
+            await ctx.send(embed=embed)
         
         rate_limits[user_id] = datetime.now() + timedelta(seconds=3)
 
