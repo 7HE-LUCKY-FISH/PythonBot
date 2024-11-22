@@ -104,6 +104,7 @@ async def create_card_embed(card_data, ctx):
     if price_text:
         embed.add_field(name="Prices", value=price_text, inline=False)
 
+    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
     return embed, None if 'image_uris' in card_data else file
 
 @bot.command(name='card', help='Looks up a Magic: The Gathering card by name.')
