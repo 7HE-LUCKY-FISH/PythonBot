@@ -17,6 +17,5 @@ A Discord bot that displays MTG card information including oracle text, pictures
 2. Create a `.env` file with your Discord bot token:
 
 ## Exmaple Bot Calls
-![Screenshot 2024-08-05 140918](https://github.com/user-attachments/assets/13acb399-9455-483d-acda-ec922b62d951)
+![image](https://github.com/user-attachments/assets/bfd51caa-9790-4478-8f39-306dab1a9e9a)
 ![Screenshot 2024-08-05 140904](https://github.com/user-attachments/assets/f5c3f574-41e2-4cce-bf56-471283286bb8)
-
