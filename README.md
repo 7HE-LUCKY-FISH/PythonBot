@@ -1,7 +1,7 @@
 # Magic The Gathering Lookup Bot
 
 A Discord bot that displays MTG card information including oracle text, pictures, mana cost, and format legalities.
-
+Future I will try to add mana symbols instead of just having text
 ## Features
 
 - Card image display
@@ -18,4 +18,5 @@ A Discord bot that displays MTG card information including oracle text, pictures
 
 ## Exmaple Bot Calls
 ![image](https://github.com/user-attachments/assets/bfd51caa-9790-4478-8f39-306dab1a9e9a)
-![Screenshot 2024-08-05 140904](https://github.com/user-attachments/assets/f5c3f574-41e2-4cce-bf56-471283286bb8)
+![image](https://github.com/user-attachments/assets/6c4ec72f-9c80-4bcc-ad65-dd2bd12aab70)
+
