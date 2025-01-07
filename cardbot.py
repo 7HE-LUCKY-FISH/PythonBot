@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
+import hashlib
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
@@ -156,6 +157,47 @@ async def card_lookup(ctx, *, card_name: str):
         except NotFound:
             pass
         await ctx.send(f"An unexpected error occurred: {str(e)}")
+
+
+
+@bot.command(name="roll", help='Rolls two d20 dice for each player and returns the order of highest sum to lowest.')
+async def roll_command(ctx, * ,  player_count: int):
+    import random
+
+    if player_count < 1:
+        await ctx.send("Please specify at least one player.")
+        return
+
+    rolls = []
+    for i in range(1, player_count + 1):
+        die1 = random.randint(1, 20)
+        die2 = random.randint(1, 20)
+        total = die1 + die2
+        rolls.append((f"Player {i}", die1, die2, total))
+
+    # Sort by total descending
+    rolls.sort(key=lambda x: x[3], reverse=True)
+
+    # Build the response
+    results = []
+    position = 1
+    for player, d1, d2, total in rolls:
+        results.append(f"{position}) {player}: {d1} + {d2} = {total}")
+        position += 1
+    embed = discord.Embed(
+        title="Dice Roll Results",
+        description="Here are the rolls from highest to lowest total:",
+        color=0x00FF00
+    )
+    embed.add_field(
+        name="Results",
+        value="\n".join(results),
+        inline=False
+    )
+    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+
+    await ctx.send(embed=embed)
+
 
 @card_lookup.error
 async def card_lookup_error(ctx, error):
