@@ -12,7 +12,7 @@ load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 
 # Initialize bot
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.all())
+bot = commands.Bot(command_prefix='!', intents=discord.Intents.all(), help_command=None)
 
 # Rate limiting dictionary
 rate_limits = {}
@@ -20,6 +20,25 @@ rate_limits = {}
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user.name}')
+
+
+
+
+@bot.command(name = 'help', help = 'Lists all available commands')
+async def help(ctx):
+    embed = discord.Embed(
+        title= "Commands",
+        description= "List of commands",
+        color= 0x00ff00
+    )
+    for command in bot.commands:
+        embed.add_field(
+            name = f"!{command.name}",
+            value = command.help or "No description available",
+            inline = False
+        )
+    await ctx.send(embed=embed)
+
 
 async def create_card_embed(card_data, ctx):
     embed = discord.Embed(
@@ -108,7 +127,7 @@ async def create_card_embed(card_data, ctx):
     embed.set_footer(text=f"Requested by {ctx.author.display_name}")
     return embed, None if 'image_uris' in card_data else file
 
-@bot.command(name='card', help='Looks up a Magic: The Gathering card by name.')
+@bot.command(name='card', help='Looks up a Magic The Gathering card by name.')
 @commands.cooldown(1, 3, commands.BucketType.user)
 async def card_lookup(ctx, *, card_name: str):
     user_id = ctx.author.id
@@ -160,7 +179,7 @@ async def card_lookup(ctx, *, card_name: str):
 
 
 
-@bot.command(name="roll", help='Rolls two d20 dice for each player and returns the order of highest sum to lowest.')
+@bot.command(name="roll", help='Rolls two d20 dice for each player.')
 async def roll_command(ctx, * ,  player_count: int):
     import random
 
@@ -197,6 +216,40 @@ async def roll_command(ctx, * ,  player_count: int):
     embed.set_footer(text=f"Requested by {ctx.author.display_name}")
 
     await ctx.send(embed=embed)
+
+@bot.command(name='random', help='Gets a random MTG card from Scryfall.')
+async def random_card(ctx):
+    loading_message = await ctx.send("Fetching a random card...")
+    try:
+        # Fetch a random card
+        url = "https://api.scryfall.com/cards/random"
+        response = requests.get(url)
+        response.raise_for_status()
+        card_data = response.json()
+
+        # Build embed
+        embed = discord.Embed(
+            title=card_data.get('name'),
+            url=card_data.get('scryfall_uri'),
+            description=card_data.get('type_line', ''),
+            color=0x00FF00
+        )
+        embed.add_field(name="Oracle Text", value=card_data.get('oracle_text', 'No text'), inline=False)
+
+        # Show card image if available
+        if 'image_uris' in card_data:
+            embed.set_image(url=card_data['image_uris'].get('normal'))
+
+        await loading_message.delete()
+        await ctx.send(embed=embed)
+
+    except requests.exceptions.RequestException as e:
+        await loading_message.delete()
+        await ctx.send(f"Error fetching a random card: {str(e)}")
+    except Exception as e:
+        await loading_message.delete()
+        await ctx.send(f"An unexpected error occurred: {str(e)}")
+
 
 
 @card_lookup.error
