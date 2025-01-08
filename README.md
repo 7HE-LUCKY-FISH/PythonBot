@@ -17,6 +17,28 @@ Currently the bot is invite-only due to the cost of me hosting it 24/7 I wish mo
 ## fixing 8/11/24
 - Made the image printing so they are together with pillow library and fused the images if there is a transformation ie(two-sided card)
 
+## Commands
+
+* `!card [card name]`
+  * Displays card information including mana cost, oracle text, and price
+  * Example: `!card Lightning Bolt`
+
+* `!random`
+  * Fetches a random MTG card from Scryfall
+  * Example: `!random`
+
+* `!roll [number of players]`
+  * Rolls two d20 dice for each player and sorts results
+  * Example: `!roll 4`
+
+* `!interact [card name]`
+  * Shows keyword abilities and their descriptions for a card
+  * Example: `!interact Serra Angel`
+
+* `!help`
+  * Displays all available commands and their usage
+  * Example: `!help`
+
 ## Installation
 
 1. Clone this repository
