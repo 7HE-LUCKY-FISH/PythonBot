@@ -34,7 +34,7 @@ async def on_ready():
 
 
 @bot.tree.command(name="help", description="Lists all available commands")
-@app_commands.guilds(discord.Object(id=GUILD_ID))  # Restrict the command to a specific guild
+@app_commands.guilds(discord.Object(id=GUILD_ID))  # Restrict the command to a specific guild use for only testing deploy will be global
 async def help(interaction: discord.Interaction):
     # Check if the interaction is from the correct guild
     if interaction.guild.id != GUILD_ID:
