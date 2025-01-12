@@ -1,4 +1,5 @@
 import discord
+from discord import app_commands
 from discord.ext import commands
 import requests
 import os
@@ -6,13 +7,14 @@ from dotenv import load_dotenv
 from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
-import hashlib
 
 load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
-
+GUILD_ID = int(os.getenv('GUILD_ID'))
+intents = discord.Intents.default()
+intents.message_content = True
 # Initialize bot
-bot = commands.Bot(command_prefix='!', intents=discord.Intents.all(), help_command=None)
+bot = commands.Bot(command_prefix='!', intents = intents, help_command=None)
 
 # Rate limiting dictionary
 rate_limits = {}
@@ -20,27 +22,84 @@ rate_limits = {}
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user.name}')
+    try:
+        guild = discord.Object(id = GUILD_ID)
+
+        await bot.tree.sync(guild = guild)
+        print("Slash commands synced")
+    
+    except Exception as e:
+        print(f"Error is on_ready: {e}")
 
 
 
-
-@bot.command(name = 'help', help = 'Lists all available commands')
-async def help(ctx):
+@bot.tree.command(name="help", description="Lists all available commands")
+@app_commands.guilds(discord.Object(id=GUILD_ID))  # Restrict the command to a specific guild
+async def help(interaction: discord.Interaction):
+    # Check if the interaction is from the correct guild
+    if interaction.guild.id != GUILD_ID:
+        return await interaction.response.send_message("This command is not available in this server.", ephemeral=True)
+    
+    # Create the embed with command list
     embed = discord.Embed(
-        title= "Commands",
-        description= "List of commands",
-        color= 0x00ff00
+        title="Commands",
+        description="List of commands",
+        color=0x00ff00
     )
-    for command in bot.commands:
+    # Iterate over all registered commands
+    for command in bot.tree.get_commands():
         embed.add_field(
-            name = f"!{command.name}",
-            value = command.help or "No description available",
-            inline = False
+            name=f"/{command.name}",
+            value=command.description or "No description available",
+            inline=False
         )
-    await ctx.send(embed=embed)
+    
+    # Send the embed as a response to the interaction
+    await interaction.response.send_message(embed=embed)
 
 
-async def create_card_embed(card_data, ctx):
+@bot.tree.command(name="roll", description="Rolls two d20 dice for each player.")
+@app_commands.describe(player_count="Number of players")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+async def roll_command(interaction: discord.Interaction, player_count: int):
+    if player_count < 1:
+        await interaction.response.send_message("Please specify at least one player.", ephemeral=True)
+        return
+    import random
+
+    rolls = []
+    for i in range(1, player_count + 1):
+        die1 = random.randint(1, 20)
+        die2 = random.randint(1, 20)
+        total = die1 + die2
+        rolls.append((f"Player {i}", die1, die2, total))
+
+    # Sort by total descending
+    rolls.sort(key=lambda x: x[3], reverse=True)
+
+    # Build the response
+    results = []
+    position = 1
+    for player, d1, d2, total in rolls:
+        results.append(f"{position}) {player}: {d1} + {d2} = {total}")
+        position += 1
+    
+    embed = discord.Embed(
+        title="Dice Roll Results",
+        description="Here are the rolls from highest to lowest total:",
+        color=0x00FF00
+    )
+    embed.add_field(
+        name="Results",
+        value="\n".join(results),
+        inline=False
+    )
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
+    # Respond to the interaction
+    await interaction.response.send_message(embed=embed)
+
+
+async def create_card_embed(card_data, interaction):
     embed = discord.Embed(
         title=card_data.get('name'),
         url=card_data.get('scryfall_uri'),
@@ -56,6 +115,7 @@ async def create_card_embed(card_data, ctx):
     if prices.get('usd_foil'):
         price_text += f"USD Foil: ${prices['usd_foil']}"
 
+    file = None
     # Handle double-sided cards
     if 'card_faces' in card_data and len(card_data['card_faces']) > 1:
         face1_url = card_data['card_faces'][0].get('image_uris', {}).get('normal')
@@ -124,20 +184,23 @@ async def create_card_embed(card_data, ctx):
     if price_text:
         embed.add_field(name="Prices", value=price_text, inline=False)
 
-    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
+    embed.set_footer(text=f"Requested by {interaction.user.display_name}")
     return embed, None if 'image_uris' in card_data else file
 
-@bot.command(name='card', help='Looks up a Magic The Gathering card by name.')
-@commands.cooldown(1, 3, commands.BucketType.user)
-async def card_lookup(ctx, *, card_name: str):
-    user_id = ctx.author.id
-    if user_id in rate_limits:
-        if datetime.now() < rate_limits[user_id]:
-            remaining_time = (rate_limits[user_id] - datetime.now()).seconds
-            await ctx.send(f"Please wait {remaining_time} seconds before making another request.")
-            return
 
-    loading_message = await ctx.send("Searching for card...")
+@bot.tree.command(name="card", description="Looks up a Magic: The Gathering card by name.")
+@app_commands.guilds(discord.Object(id=GUILD_ID))
+@app_commands.describe(card_name="The name of the Magic: The Gathering card to look up.")
+async def card_lookup(interaction: discord.interactions, card_name: str):
+    user_id = interaction.user.id
+    if user_id in rate_limits and datetime.now() < rate_limits[user_id]:
+        remaining_time = (rate_limits[user_id] - datetime.now()).seconds
+        await interaction.response.send_message(
+            f"Please wait {remaining_time} seconds before making another request.", ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
 
     try:
         query = card_name.replace(' ', '+')
@@ -145,81 +208,28 @@ async def card_lookup(ctx, *, card_name: str):
         
         response = requests.get(url)
         response.raise_for_status()
-        
         card_data = response.json()
-        from discord.errors import NotFound
 
-        embed, file = await create_card_embed(card_data, ctx)
-        
-        try:
-            await loading_message.delete()
-        except NotFound:
-            # Ignore if loading message was already deleted
-            pass
-        
+        embed, file = await create_card_embed(card_data, interaction)
+
         if file:
-            await ctx.send(embed=embed, file=file)
+            await interaction.followup.send(embed=embed, file=file)
         else:
-            await ctx.send(embed=embed)
-        
+            await interaction.followup.send(embed=embed)
+
+        # Set rate limit for the user
         rate_limits[user_id] = datetime.now() + timedelta(seconds=3)
 
     except requests.exceptions.RequestException as e:
-        try:
-            await loading_message.delete()
-        except NotFound:
-            pass
-        await ctx.send(f"Error fetching card data: {str(e)}")
+        await interaction.followup.send(f"Error fetching card data: {str(e)}")
     except Exception as e:
-        try:
-            await loading_message.delete()
-        except NotFound:
-            pass
-        await ctx.send(f"An unexpected error occurred: {str(e)}")
+        await interaction.followup.send(f"An unexpected error occurred: {str(e)}")
 
 
-
-@bot.command(name="roll", help='Rolls two d20 dice for each player.')
-async def roll_command(ctx, * ,  player_count: int):
-    import random
-
-    if player_count < 1:
-        await ctx.send("Please specify at least one player.")
-        return
-
-    rolls = []
-    for i in range(1, player_count + 1):
-        die1 = random.randint(1, 20)
-        die2 = random.randint(1, 20)
-        total = die1 + die2
-        rolls.append((f"Player {i}", die1, die2, total))
-
-    # Sort by total descending
-    rolls.sort(key=lambda x: x[3], reverse=True)
-
-    # Build the response
-    results = []
-    position = 1
-    for player, d1, d2, total in rolls:
-        results.append(f"{position}) {player}: {d1} + {d2} = {total}")
-        position += 1
-    embed = discord.Embed(
-        title="Dice Roll Results",
-        description="Here are the rolls from highest to lowest total:",
-        color=0x00FF00
-    )
-    embed.add_field(
-        name="Results",
-        value="\n".join(results),
-        inline=False
-    )
-    embed.set_footer(text=f"Requested by {ctx.author.display_name}")
-
-    await ctx.send(embed=embed)
-
-@bot.command(name='random', help='Gets a random MTG card from Scryfall.')
-async def random_card(ctx):
-    loading_message = await ctx.send("Fetching a random card...")
+@bot.tree.command(name="random", description="Gets a random MTG card from Scryfall.")
+@app_commands.guilds(discord.Object(id=GUILD_ID))  # Restrict to specific guild
+async def random_card(interaction: discord.Interaction):
+    await interaction.response.defer()  # Defer response to show processing
     try:
         # Fetch a random card
         url = "https://api.scryfall.com/cards/random"
@@ -227,36 +237,33 @@ async def random_card(ctx):
         response.raise_for_status()
         card_data = response.json()
 
-        # Build embed
-        embed = discord.Embed(
-            title=card_data.get('name'),
-            url=card_data.get('scryfall_uri'),
-            description=card_data.get('type_line', ''),
-            color=0x00FF00
-        )
-        embed.add_field(name="Oracle Text", value=card_data.get('oracle_text', 'No text'), inline=False)
 
-        # Show card image if available
-        if 'image_uris' in card_data:
-            embed.set_image(url=card_data['image_uris'].get('normal'))
+        embed, file = await create_card_embed(card_data, interaction)
 
-        await loading_message.delete()
-        await ctx.send(embed=embed)
+        if file:
+            await interaction.followup.send(embed=embed, file = file)
+        else:
+            await interaction.followup.send(embed=embed)
 
     except requests.exceptions.RequestException as e:
-        await loading_message.delete()
-        await ctx.send(f"Error fetching a random card: {str(e)}")
+        await interaction.followup.send(f"Error fetching a random card: {str(e)}")
     except Exception as e:
-        await loading_message.delete()
-        await ctx.send(f"An unexpected error occurred: {str(e)}")
+        await interaction.followup.send(f"An unexpected error occurred: {str(e)}")
 
 
-
-@card_lookup.error
-async def card_lookup_error(ctx, error):
-    if isinstance(error, commands.CommandOnCooldown):
-        await ctx.send(f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.")
+# Error handling for app commands
+@random_card.error
+async def random_card_error(interaction: discord.Interaction, error):
+    if isinstance(error, app_commands.CommandOnCooldown):
+        await interaction.response.send_message(
+            f"This command is on cooldown. Try again in {error.retry_after:.2f} seconds.",
+            ephemeral=True,
+        )
     else:
-        await ctx.send(f"An error occurred: {str(error)}")
+        await interaction.response.send_message(
+            f"An error occurred: {str(error)}",
+            ephemeral=True,
+        )
+
 
 bot.run(TOKEN)
