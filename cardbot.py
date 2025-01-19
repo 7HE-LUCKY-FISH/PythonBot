@@ -9,11 +9,16 @@ from datetime import datetime, timezone, timedelta
 from PIL import Image
 from io import BytesIO
 
+
+# Load environment variables
 load_dotenv()
 TOKEN = os.getenv('DISCORD_BOT_TOKEN')
 GUILD_ID = int(os.getenv('GUILD_ID'))
 intents = discord.Intents.default()
 intents.message_content = True
+
+
+
 # Initialize bot
 bot = commands.Bot(command_prefix='!', intents = intents, help_command=None)
 
