@@ -320,7 +320,5 @@ async def random_card_error(interaction: discord.Interaction, error):
             ephemeral=True,
         )
 
-
-
-
+#load TOKEN from env file
 bot.run(TOKEN)
