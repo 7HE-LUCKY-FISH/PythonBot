@@ -154,8 +154,6 @@ async def roll_command(interaction: discord.Interaction, player_count: int):
 
 
 
-
-
 async def create_card_embed(card_data, interaction):
     embed = discord.Embed(
         title=card_data.get('name'),
